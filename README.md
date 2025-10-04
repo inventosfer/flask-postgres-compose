@@ -99,3 +99,26 @@ Flask + Gunicorn + Nginx + Postgres funcionando!
 4. Respuesta de `/users` después de añadir un usuario.
 
 [{"id":1,"name":"Fernando"},{"id":2,"name":"Pepe"},{"id":3,"name":"Luis"},{"id":4,"name":"Jaime"},{"id":5,"name":"Anna"},{"id":6,"name":"users"}]
+
+
+---
+
+## Gestión con Git
+
+Se inicializó el repositorio en la carpeta del proyecto y se realizó el primer commit:
+
+```bash
+git init
+git add .
+git commit -m "Entrega 1: Flask + Postgres con Docker Compose"
+
+git log --oneline
+94d1c54 (HEAD -> main) Parte 1: Flask + Postgres con Docker Compose
+
+
+
+---
+
+## Repositorio en GitHub
+El código de este proyecto está disponible en:  
+  [https://github.com/inventorfer/flask-postgres-compose](https://github.com/inventorfer/flask-postgres-compose)
