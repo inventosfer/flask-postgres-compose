@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: flask-db
+  namespace: parte2
+spec:
+  selector:
+    app: flask-db                        # Apunta a los Pods con esta etiqueta
+  ports:
+    - port: 5432                         # Puerto estable dentro del clúster
+      targetPort: 5432                   # Puerto del contenedor
