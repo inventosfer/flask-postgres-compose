@@ -1,0 +1,61 @@
+---
+- name: Preparar nodo Ubuntu con Docker y kubeadm (plantilla)
+  hosts: target
+  become: yes
+
+  vars:
+    proyecto_user: devops
+    proyecto_dir: /opt/proyecto-final
+
+  tasks:
+    - name: Paquetes base
+      apt:
+        name:
+          - ca-certificates
+          - curl
+          - gnupg
+          - apt-transport-https
+        state: present
+        update_cache: yes
+
+    - name: Instalar Docker
+      apt:
+        name: docker.io
+        state: present
+
+    - name: Habilitar Docker
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Repo Kubernetes
+      copy:
+        dest: /etc/apt/sources.list.d/kubernetes.list
+        content: "deb http://apt.kubernetes.io/ kubernetes-xenial main"
+
+    - name: Clave APT de Kubernetes
+      shell: curl -fsS https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
+      args: { warn: false }
+      changed_when: false
+
+    - name: Instalar kubeadm, kubelet, kubectl
+      apt:
+        name: [kubelet, kubeadm, kubectl]
+        state: present
+        update_cache: yes
+
+    - name: Crear usuario de proyecto
+      user:
+        name: "{{ proyecto_user }}"
+        groups: docker
+        append: yes
+        create_home: yes
+
+    - name: Crear carpeta proyecto
+      file:
+        path: "{{ proyecto_dir }}"
+        state: directory
+        owner: "{{ proyecto_user }}"
+        group: "{{ proyecto_user }}"
+        mode: "0755"

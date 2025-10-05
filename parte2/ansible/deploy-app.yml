@@ -1,0 +1,62 @@
+---
+- name: Desplegar Flask + Postgres en Kubernetes (namespace parte2)
+  hosts: local
+  gather_facts: false
+
+  vars:
+    ns: parte2
+    k8s_dir: "{{ playbook_dir | dirname }}/k8s"
+
+  tasks:
+    - name: Asegurar namespace
+      shell: |
+        set -o pipefail
+        kubectl create namespace {{ ns }} --dry-run=client -o yaml | kubectl apply -f -
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: ConfigMap
+      command: kubectl apply -n {{ ns }} -f {{ k8s_dir }}/configmap.yaml
+
+    - name: Secret
+      command: kubectl apply -n {{ ns }} -f {{ k8s_dir }}/secret.yaml
+
+    - name: PVC DB
+      command: kubectl apply -n {{ ns }} -f {{ k8s_dir }}/pvc-db.yaml
+
+    - name: Deployment DB
+      command: kubectl apply -n {{ ns }} -f {{ k8s_dir }}/deploy-db.yaml
+
+    - name: Service DB
+      command: kubectl apply -n {{ ns }} -f {{ k8s_dir }}/svc-db.yaml
+
+    - name: Esperar DB lista
+      command: kubectl -n {{ ns }} rollout status deploy/flask-db
+      register: db_rollout
+      retries: 20
+      delay: 5
+      until: db_rollout.rc == 0
+
+    - name: Deployment API
+      command: kubectl apply -n {{ ns }} -f {{ k8s_dir }}/deploy-api.yaml
+
+    - name: Service API
+      command: kubectl apply -n {{ ns }} -f {{ k8s_dir }}/svc-api.yaml
+
+    - name: (Opcional) Ingress si existe
+      stat:
+        path: "{{ k8s_dir }}/ingress.yaml"
+      register: ingress_file
+
+    - name: Aplicar Ingress
+      command: kubectl apply -n {{ ns }} -f {{ k8s_dir }}/ingress.yaml
+      when: ingress_file.stat.exists
+
+    - name: Esperar API lista
+      command: kubectl -n {{ ns }} rollout status deploy/flask-api
+      register: api_rollout
+      retries: 20
+      delay: 5
+      until: api_rollout.rc == 0
+
