@@ -73,7 +73,7 @@ minikube service -n monitoring grafana --url
 
 ---
 
-## Validacion rapida (Prueba de strees)
+## Validacion rapida (Prueba de stress)
 
 
 kubectl run stress-test --image=alpine:latest --restart=Never -- \
