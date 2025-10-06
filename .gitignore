@@ -1,0 +1,37 @@
+# Archivos de Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Configuración local de Jenkins o Minikube
+*.log
+*.pid
+*.sock
+*.tmp
+.kube/
+.minikube/
+*.crt
+*.key
+
+# Entornos virtuales
+venv/
+env/
+
+# Archivos de Docker
+*.tar
+*.bak
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+
+# Archivos temporales
+*.swp
+*.swo
+
+# Backups de editores
+*~
+
+# Archivos de credenciales o configuración sensible
+kubeconfig-jenkins
+dockerhub.txt
