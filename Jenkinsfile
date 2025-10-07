@@ -3,14 +3,28 @@ pipeline {
   options { timestamps() }
 
   environment {
-    IMAGE     = "inventosfer/flask-postgres-compose:latest"   // ajusta si usas otro repo/tag
-    NAMESPACE = "proyecto-final"
+    IMAGE       = "inventosfer/flask-postgres-compose:latest" // usa tu repo/tag de Docker Hub
+    NAMESPACE   = "proyecto-final"
+
+    // RUTAS de tu proyecto (según tu tree):
+    DOCKERFILE  = "parte1/Dockerfile"   // <— aquí está tu Dockerfile
+    CONTEXT     = "parte1"              // <— carpeta del build context
+    MANIFESTS   = "parte2/k8s"          // <— carpeta con tus YAML
   }
 
   stages {
     stage('Checkout') {
+      steps { checkout scm }
+    }
+
+    stage('Sanity') {
       steps {
-        checkout scm
+        sh '''
+          set -eux
+          pwd; echo "--- raíz del repo ---"; ls -la
+          echo "--- Dockerfile(s) ---"; find . -maxdepth 3 -iname Dockerfile -print || true
+          echo "--- YAMLs ---"; find . -maxdepth 3 -name "*.yaml" -print | head -n 50 || true
+        '''
       }
     }
 
@@ -22,32 +36,16 @@ pipeline {
           passwordVariable: 'DOCKER_PASS'
         )]) {
           sh """
+            set -eux
             echo "\$DOCKER_PASS" | docker login -u "\$DOCKER_USER" --password-stdin
-            docker build -t ${env.IMAGE} .
-            docker push ${env.IMAGE}
+            docker build -t \${IMAGE} -f \${DOCKERFILE} \${CONTEXT}
+            docker push \${IMAGE}
           """
         }
       }
     }
 
     stage('Kube Deploy') {
+      when { expression { return fileExists(env.MANIFESTS) } }
       steps {
-        // Credencial tipo Secret file con ID EXACTO 'kubeconfig'
-        withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
-          sh """
-            set -eux
-            kubectl config use-context minikube
-            kubectl create ns ${env.NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
-            kubectl -n ${env.NAMESPACE} apply -f parte2/k8s/
-            kubectl -n ${env.NAMESPACE} get all
-          """
-        }
-      }
-    }
-  }
-
-  post {
-    always { echo 'Pipeline finalizado.' }
-  }
-}
-
+        withCredentials([file(credentialsId: 'kubeconfig', variable:]()
