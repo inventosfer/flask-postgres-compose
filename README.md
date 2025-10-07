@@ -25,38 +25,112 @@ El pipeline:
 pipeline {
   agent any
   options { timestamps() }
+
+  environment {
+    IMAGE      = "inventosfer/flask-postgres-compose:latest"
+    DOCKERFILE = "parte1/Dockerfile"
+    CONTEXT    = "parte1"
+    MANIFESTS  = "parte2/k8s"
+    NAMESPACE  = "parte2"
+  }
+
   stages {
+
     stage('Checkout') {
       steps { checkout scm }
     }
-    stage('Build & Push Docker Hub') {
+
+    stage('Sanity') {
       steps {
-        withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-          sh '''
-            set -e
+        sh '''bash -lc
+          set -euo pipefail
+          echo "--- Raíz del repo ---"; pwd
+          echo "--- Dockerfile(s) ---"; find . -maxdepth 3 -iname Dockerfile -print || true
+          echo "--- YAMLs ---"; find . -maxdepth 3 -name "*.yaml" -print | head -n 100 || true
+        '''
+      }
+    }
+
+    stage('Docker Build & Push') {
+      steps {
+        withCredentials([usernamePassword(
+          credentialsId: 'dockerhub',
+          usernameVariable: 'DOCKER_USER',
+          passwordVariable: 'DOCKER_PASS'
+        )]) {
+          sh '''bash -lc
+            set -euo pipefail
             echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-            IMAGE="$DOCKER_USER/flask-postgres-compose"
-            docker build -t "$IMAGE:latest" parte1
-            docker push "$IMAGE:latest"
+            docker build -t ${IMAGE} -f ${DOCKERFILE} ${CONTEXT}
+            docker push ${IMAGE}
           '''
         }
       }
     }
+
     stage('Kube Deploy') {
+      when { expression { return fileExists(env.MANIFESTS) } }
       steps {
-        withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
-          sh '''
-            export KUBECONFIG="$KUBECONFIG"
-            kubectl -n parte2 set image deploy/flask-api flask-api="$DOCKER_USER/flask-postgres-compose:latest" --record=true
-            kubectl -n parte2 rollout status deploy/flask-api --timeout=300s
-            URL=$(minikube service -n parte2 flask-api --url | tail -n1)
-            curl -fsS "$URL/ping" | grep -q '"status":"ok"'
-          '''
-        }
+        sh '''bash -lc
+          set -euo pipefail
+
+          echo ">>> kubeconfig: $KUBECONFIG | context: $(kubectl config current-context) <<<"
+          kubectl get ns || true
+
+          # Asegura el namespace
+          kubectl get ns ${NAMESPACE} || kubectl create ns ${NAMESPACE}
+
+          # Quita metadata.namespace por seguridad
+          find ${MANIFESTS} -name "*.yaml" -exec sed -i '/^[[:space:]]*namespace:/d' {} \\;
+
+          # Aplica manifests y fuerza imagen de la API
+          kubectl -n ${NAMESPACE} apply -f ${MANIFESTS}
+          kubectl -n ${NAMESPACE} set image deploy/flask-api flask-api=${IMAGE} || true
+          kubectl -n ${NAMESPACE} rollout status deploy/flask-api --timeout=180s
+
+          # Estado
+          kubectl -n ${NAMESPACE} get all
+        '''
       }
     }
+
+    stage('Stabilize Pods') {
+      steps {
+        sh '''bash -lc
+          set -euo pipefail
+          # Espera a que todo quede en Running
+          for i in {1..18}; do
+            pending=$(kubectl -n ${NAMESPACE} get pods --no-headers | awk '$3!="Running"{c++} END{print c+0}')
+            [ "$pending" -eq 0 ] && break
+            echo "Esperando estabilización... (pendientes=$pending)"
+            sleep 5
+          done
+          echo "--- Estado final de pods ---"
+          kubectl -n ${NAMESPACE} get pods
+        '''
+      }
+    }
+
+    stage('Check Pods & Services') {
+      steps {
+        sh '''bash -lc
+          set -euo pipefail
+          chmod +x ./check.sh || true
+          ./check.sh
+        '''
+      }
+    }
+
+  } // stages
+
+  post {
+    success { echo ' Pipeline OK — listo para el pantallazo' }
+    failure { echo ' Falló — revisar el final del log' }
+    always  { echo 'Pipeline finalizado.' }
   }
 }
+
+```
 
 
 ---
