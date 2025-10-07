@@ -3,15 +3,13 @@ pipeline {
   options { timestamps() }
 
   environment {
-    // Cambia esto si tu repo de Docker Hub o tag es otro
-    IMAGE = "inventosfer/flask-postgres-compose:latest"
+    IMAGE     = "inventosfer/flask-postgres-compose:latest"   // ajusta si usas otro repo/tag
     NAMESPACE = "proyecto-final"
   }
 
   stages {
     stage('Checkout') {
       steps {
-        // Usa la configuración "Pipeline from SCM" del job
         checkout scm
       }
     }
@@ -23,20 +21,33 @@ pipeline {
           usernameVariable: 'DOCKER_USER',
           passwordVariable: 'DOCKER_PASS'
         )]) {
-          sh '''
-            echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-            docker build -t "$IMAGE" .
-            docker push "$IMAGE"
-          '''
+          sh """
+            echo "\$DOCKER_PASS" | docker login -u "\$DOCKER_USER" --password-stdin
+            docker build -t ${env.IMAGE} .
+            docker push ${env.IMAGE}
+          """
         }
       }
     }
 
     stage('Kube Deploy') {
       steps {
-        // Asegúrate de haber creado la credencial tipo "Secret file" con ID EXACTO 'kubeconfig'
+        // Credencial tipo Secret file con ID EXACTO 'kubeconfig'
         withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
-          sh '''
+          sh """
             set -eux
             kubectl config use-context minikube
+            kubectl create ns ${env.NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+            kubectl -n ${env.NAMESPACE} apply -f parte2/k8s/
+            kubectl -n ${env.NAMESPACE} get all
+          """
+        }
+      }
+    }
+  }
+
+  post {
+    always { echo 'Pipeline finalizado.' }
+  }
+}
 
