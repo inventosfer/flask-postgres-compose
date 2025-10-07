@@ -4,11 +4,11 @@ pipeline {
 
   environment {
     IMAGE       = "inventosfer/flask-postgres-compose:latest"
-    NAMESPACE   = "parte2"                       // usa el namespace real que ya existe
+    NAMESPACE   = "parte2"
     DOCKERFILE  = "parte1/Dockerfile"
     CONTEXT     = "parte1"
     MANIFESTS   = "parte2/k8s"
-    KUBECONFIG  = "/var/jenkins_home/.kube/config" // usa el kubeconfig interno de Jenkins
+    KUBECONFIG  = "/var/jenkins_home/.kube/config"
   }
 
   stages {
@@ -63,15 +63,17 @@ pipeline {
           # Crea namespace si no existe
           kubectl get ns ${NAMESPACE} || kubectl create ns ${NAMESPACE}
 
-          # Elimina líneas namespace: de los YAML por seguridad
+          # Elimina líneas namespace: de los YAML
           find ${MANIFESTS} -name "*.yaml" -exec sed -i '/^[[:space:]]*namespace:/d' {} \\;
 
-          # Kustomize temporal
+          # Directorio temporal para Kustomize
           tmpdir=$(mktemp -d)
+          manifest_abs=$(realpath ${MANIFESTS})
+
           cat > "$tmpdir/kustomization.yaml" <<EOF
 namespace: ${NAMESPACE}
 resources:
-- ${MANIFESTS}
+- ${manifest_abs}
 EOF
 
           echo "--- kustomization.yaml ---"
@@ -79,7 +81,7 @@ EOF
 
           kubectl apply --validate=false -k "$tmpdir"
 
-          # Forzar imagen y esperar rollout
+          # Forzar imagen conocida y esperar rollout
           kubectl -n ${NAMESPACE} set image deploy/flask-api flask-api=${IMAGE}
           kubectl -n ${NAMESPACE} rollout status deploy/flask-api --timeout=180s
 
@@ -96,7 +98,6 @@ EOF
         '''
       }
     }
-
   }
 
   post {
