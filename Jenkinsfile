@@ -1,34 +1,32 @@
 pipeline {
   agent any
+  options { timestamps() }
 
   environment {
-    // Define en Jenkins → Manage Jenkins → System → Global properties
-    // una variable DOCKERHUB_USERNAME con tu usuario de Docker Hub.
-    IMAGE_NAME = "${DOCKERHUB_USERNAME ?: ''}/flask-postgres-compose"
-    KUBE_NS    = "parte2"
-    DEPLOY     = "flask-api"
+    // Cambia esto si tu repo de Docker Hub o tag es otro
+    IMAGE = "inventosfer/flask-postgres-compose:latest"
+    NAMESPACE = "proyecto-final"
   }
-
-  options { timestamps() }
 
   stages {
     stage('Checkout') {
-      steps { checkout scm }
+      steps {
+        // Usa la configuración "Pipeline from SCM" del job
+        checkout scm
+      }
     }
 
     stage('Docker Build & Push') {
-      environment { DOCKER_CLI_EXPERIMENTAL = "enabled" }
       steps {
-        withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+        withCredentials([usernamePassword(
+          credentialsId: 'dockerhub',
+          usernameVariable: 'DOCKER_USER',
+          passwordVariable: 'DOCKER_PASS'
+        )]) {
           sh '''
-            if [ -z "$DOCKER_USER" ]; then
-              echo "ERROR: define DOCKERHUB_USERNAME como variable global en Jenkins."
-              exit 1
-            fi
             echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-            cd parte1
-            docker build -t "$DOCKER_USER/flask-postgres-compose:latest" .
-            docker push "$DOCKER_USER/flask-postgres-compose:latest"
+            docker build -t "$IMAGE" .
+            docker push "$IMAGE"
           '''
         }
       }
@@ -36,19 +34,9 @@ pipeline {
 
     stage('Kube Deploy') {
       steps {
+        // Asegúrate de haber creado la credencial tipo "Secret file" con ID EXACTO 'kubeconfig'
         withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
           sh '''
-            export KUBECONFIG="$KUBECONFIG"
-            kubectl -n "$KUBE_NS" set image deploy/$DEPLOY $DEPLOY="$DOCKER_USER/flask-postgres-compose:latest" || true
-            kubectl -n "$KUBE_NS" rollout status deploy/$DEPLOY
-            kubectl -n "$KUBE_NS" get pods -l app=$DEPLOY
-          '''
-        }
-      }
-    }
-  }
+            set -eux
+            kubectl config use-context minikube
 
-  post {
-    always { echo "Pipeline finalizado." }
-  }
-}
