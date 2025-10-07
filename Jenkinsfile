@@ -12,23 +12,17 @@ pipeline {
   }
 
   stages {
-
     stage('Checkout') {
-      steps {
-        checkout scm
-      }
+      steps { checkout scm }
     }
 
     stage('Sanity') {
       steps {
         sh '''
           set -eux
-          echo "--- Raíz del repo ---"
-          pwd
-          echo "--- Dockerfile(s) ---"
-          find . -maxdepth 3 -iname Dockerfile -print || true
-          echo "--- YAMLs ---"
-          find . -maxdepth 3 -name "*.yaml" -print | head -n 100 || true
+          echo "--- Raíz del repo ---"; pwd
+          echo "--- Dockerfile(s) ---"; find . -maxdepth 3 -iname Dockerfile -print || true
+          echo "--- YAMLs ---"; find . -maxdepth 3 -name "*.yaml" -print | head -n 100 || true
         '''
       }
     }
@@ -55,36 +49,23 @@ pipeline {
       steps {
         sh '''
           set -eux
-          echo ">>> Usando kubeconfig en: $KUBECONFIG <<<"
-
-          kubectl config current-context
+          echo ">>> kubeconfig: $KUBECONFIG | context: $(kubectl config current-context) <<<"
           kubectl get ns || true
 
-          # Crea namespace si no existe
+          # Asegura el namespace
           kubectl get ns ${NAMESPACE} || kubectl create ns ${NAMESPACE}
 
-          # Elimina líneas namespace: de los YAML
+          # Quita metadata.namespace de todos los YAML (por si acaso)
           find ${MANIFESTS} -name "*.yaml" -exec sed -i '/^[[:space:]]*namespace:/d' {} \\;
 
-          # Directorio temporal para Kustomize
-          tmpdir=$(mktemp -d)
-          manifest_abs=$(realpath ${MANIFESTS})
+          # Aplica directamente en el namespace (sin kustomize)
+          kubectl -n ${NAMESPACE} apply -f ${MANIFESTS}
 
-          cat > "$tmpdir/kustomization.yaml" <<EOF
-namespace: ${NAMESPACE}
-resources:
-- ${manifest_abs}
-EOF
-
-          echo "--- kustomization.yaml ---"
-          cat "$tmpdir/kustomization.yaml"
-
-          kubectl apply --validate=false -k "$tmpdir"
-
-          # Forzar imagen conocida y esperar rollout
-          kubectl -n ${NAMESPACE} set image deploy/flask-api flask-api=${IMAGE}
+          # Fuerza imagen conocida y espera rollout
+          kubectl -n ${NAMESPACE} set image deploy/flask-api flask-api=${IMAGE} || true
           kubectl -n ${NAMESPACE} rollout status deploy/flask-api --timeout=180s
 
+          # Estado final
           kubectl -n ${NAMESPACE} get all
         '''
       }
@@ -101,9 +82,8 @@ EOF
   }
 
   post {
-    always {
-      echo '✅ Pipeline finalizado correctamente.'
-    }
+    success { echo ' Pipeline OK — listo para el pantallazo' }
+    failure { echo ' Falló — revisa el final del log' }
   }
 }
 
