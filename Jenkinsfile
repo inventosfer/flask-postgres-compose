@@ -3,13 +3,12 @@ pipeline {
   options { timestamps() }
 
   environment {
-    IMAGE       = "inventosfer/flask-postgres-compose:latest" // usa tu repo/tag de Docker Hub
+    IMAGE       = "inventosfer/flask-postgres-compose:latest"
     NAMESPACE   = "proyecto-final"
 
-    // RUTAS de tu proyecto (según tu tree):
-    DOCKERFILE  = "parte1/Dockerfile"   // <— aquí está tu Dockerfile
-    CONTEXT     = "parte1"              // <— carpeta del build context
-    MANIFESTS   = "parte2/k8s"          // <— carpeta con tus YAML
+    DOCKERFILE  = "parte1/Dockerfile"   // <- tu Dockerfile
+    CONTEXT     = "parte1"              // <- carpeta del build context
+    MANIFESTS   = "parte2/k8s"          // <- manifiestos K8s
   }
 
   stages {
@@ -48,4 +47,18 @@ pipeline {
     stage('Kube Deploy') {
       when { expression { return fileExists(env.MANIFESTS) } }
       steps {
-        withCredentials([file(credentialsId: 'kubeconfig', variable:]()
+        withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+          sh """
+            set -eux
+            kubectl config use-context minikube
+            kubectl create ns \${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+            kubectl -n \${NAMESPACE} apply -f \${MANIFESTS}
+            kubectl -n \${NAMESPACE} get all
+          """
+        }
+      }
+    }
+  }
+
+  post { always { echo 'Pipeline finalizado.' } }
+}
