@@ -70,7 +70,7 @@ bash -lc '
   kubectl -n ${NAMESPACE} set image deploy/flask-api flask-api=${IMAGE} || true
   kubectl -n ${NAMESPACE} rollout status deploy/flask-api --timeout=180s
 
-  # Estado final
+  # Estado inmediato
   kubectl -n ${NAMESPACE} get all
 '
         '''
@@ -82,11 +82,12 @@ bash -lc '
         sh '''
 bash -lc '
   set -euo pipefail
-  # Espera a que desaparezcan pods antiguos o en creación
-  for i in {1..18}; do
-    pending=$(kubectl -n ${NAMESPACE} get pods --no-headers | awk "$3==\\"Terminating\\"||$3==\\"ContainerCreating\\"||$3==\\"Pending\\"{c++} END{print c+0}")
-    [ "$pending" -eq 0 ] && break
-    echo "Esperando estabilización... (pendientes=$pending)"
+
+  # Espera hasta que TODOS los pods estén en STATUS Running
+  for i in {1..24}; do
+    not_running=$(kubectl -n ${NAMESPACE} get pods --no-headers | awk '"'"'$3!="Running"{c++} END{print c+0}'"'"')
+    [ "${not_running}" -eq 0 ] && break
+    echo "Esperando estabilización... pods no Running=${not_running}"
     sleep 5
   done
 
