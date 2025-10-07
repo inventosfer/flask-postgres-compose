@@ -4,25 +4,31 @@ pipeline {
 
   environment {
     IMAGE       = "inventosfer/flask-postgres-compose:latest"
-    NAMESPACE   = "proyecto-final"
-
-    DOCKERFILE  = "parte1/Dockerfile"   // <- tu Dockerfile
-    CONTEXT     = "parte1"              // <- carpeta del build context
-    MANIFESTS   = "parte2/k8s"          // <- manifiestos K8s
+    NAMESPACE   = "parte2"                       // usa el namespace real que ya existe
+    DOCKERFILE  = "parte1/Dockerfile"
+    CONTEXT     = "parte1"
+    MANIFESTS   = "parte2/k8s"
+    KUBECONFIG  = "/var/jenkins_home/.kube/config" // usa el kubeconfig interno de Jenkins
   }
 
   stages {
+
     stage('Checkout') {
-      steps { checkout scm }
+      steps {
+        checkout scm
+      }
     }
 
     stage('Sanity') {
       steps {
         sh '''
           set -eux
-          pwd; echo "--- raíz del repo ---"; ls -la
-          echo "--- Dockerfile(s) ---"; find . -maxdepth 3 -iname Dockerfile -print || true
-          echo "--- YAMLs ---"; find . -maxdepth 3 -name "*.yaml" -print | head -n 50 || true
+          echo "--- Raíz del repo ---"
+          pwd
+          echo "--- Dockerfile(s) ---"
+          find . -maxdepth 3 -iname Dockerfile -print || true
+          echo "--- YAMLs ---"
+          find . -maxdepth 3 -name "*.yaml" -print | head -n 100 || true
         '''
       }
     }
@@ -34,12 +40,12 @@ pipeline {
           usernameVariable: 'DOCKER_USER',
           passwordVariable: 'DOCKER_PASS'
         )]) {
-          sh """
+          sh '''
             set -eux
-            echo "\$DOCKER_PASS" | docker login -u "\$DOCKER_USER" --password-stdin
-            docker build -t \${IMAGE} -f \${DOCKERFILE} \${CONTEXT}
-            docker push \${IMAGE}
-          """
+            echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+            docker build -t ${IMAGE} -f ${DOCKERFILE} ${CONTEXT}
+            docker push ${IMAGE}
+          '''
         }
       }
     }
@@ -47,18 +53,56 @@ pipeline {
     stage('Kube Deploy') {
       when { expression { return fileExists(env.MANIFESTS) } }
       steps {
-        withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
-          sh """
-            set -eux
-            kubectl config use-context minikube
-            kubectl create ns \${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
-            kubectl -n \${NAMESPACE} apply -f \${MANIFESTS}
-            kubectl -n \${NAMESPACE} get all
-          """
-        }
+        sh '''
+          set -eux
+          echo ">>> Usando kubeconfig en: $KUBECONFIG <<<"
+
+          kubectl config current-context
+          kubectl get ns || true
+
+          # Crea namespace si no existe
+          kubectl get ns ${NAMESPACE} || kubectl create ns ${NAMESPACE}
+
+          # Elimina líneas namespace: de los YAML por seguridad
+          find ${MANIFESTS} -name "*.yaml" -exec sed -i '/^[[:space:]]*namespace:/d' {} \\;
+
+          # Kustomize temporal
+          tmpdir=$(mktemp -d)
+          cat > "$tmpdir/kustomization.yaml" <<EOF
+namespace: ${NAMESPACE}
+resources:
+- ${MANIFESTS}
+EOF
+
+          echo "--- kustomization.yaml ---"
+          cat "$tmpdir/kustomization.yaml"
+
+          kubectl apply --validate=false -k "$tmpdir"
+
+          # Forzar imagen y esperar rollout
+          kubectl -n ${NAMESPACE} set image deploy/flask-api flask-api=${IMAGE}
+          kubectl -n ${NAMESPACE} rollout status deploy/flask-api --timeout=180s
+
+          kubectl -n ${NAMESPACE} get all
+        '''
       }
     }
+
+    stage('Check Pods & Services') {
+      steps {
+        sh '''
+          chmod +x ./check.sh || true
+          ./check.sh
+        '''
+      }
+    }
+
   }
 
-  post { always { echo 'Pipeline finalizado.' } }
+  post {
+    always {
+      echo '✅ Pipeline finalizado correctamente.'
+    }
+  }
 }
+
